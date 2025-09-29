@@ -5,9 +5,9 @@
 # ===============================
 
 # 🔑 Constants
-$shopifyDomain   = "babyjalebigobal.myshopify.com"
-$shopifyToken    = $env:SHOPIFY_TOKEN_ADI_GLOBAL
-$bikWebhookUrl   = "https://bikapi.bikayi.app/chatbot/webhook/CvmfOmjgYZOuh49FxGQuDWhe4i62?flow=ordertrack5667"
+$shopifyDomain   = $env:SHOPIFY_DOMAIN
+$shopifyToken    = $env:SHOPIFY_TOKEN
+$bikWebhookUrl   = $env:BIK_WEBHOOK_URL
 $trackingBaseUrl = "https://www.babyjalebiglobal.com/pages/my-tracking-page0?awb="
 
 # 📂 Memory file
