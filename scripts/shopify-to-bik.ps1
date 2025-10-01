@@ -100,7 +100,7 @@ We’ll keep you updated until everything reaches you safely 💕
         $payload = @{
             order_id         = $order.id
             awbs             = $allAwbs
-            tracking_urls    = $trackingUrls
+            trac    = $trackingUrls
             email            = $customerEmail
             phone            = $customerPhone
             customer_name    = $customerName
