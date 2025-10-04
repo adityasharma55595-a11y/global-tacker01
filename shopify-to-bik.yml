@@ -15,11 +15,13 @@ jobs:
       - name: Setup PowerShell
         uses: PowerShell/PowerShell@v1
 
-      - name: Restore cache (orders_sent.json)
-        uses: actions/cache@v3
+      # 👇 Restore orders_sent.json from last run (if it exists)
+      - name: Download orders_sent.json
+        uses: actions/download-artifact@v3
         with:
-          path: orders_sent.json
-          key: orders-sent-cache
+          name: orders-sent
+          path: .
+        continue-on-error: true   # prevents failure on first run when artifact doesn’t exist
 
       - name: Run Shopify → BIK script
         run: pwsh ./scripts/shopify-to-bik.ps1
@@ -28,8 +30,9 @@ jobs:
           SHOPIFY_TOKEN: ${{ secrets.SHOPIFY_TOKEN }}
           BIK_WEBHOOK_URL: ${{ secrets.BIK_WEBHOOK_URL }}
 
-      - name: Save cache (orders_sent.json)
-        uses: actions/cache@v3
+      # 👇 Save updated orders_sent.json for the next run
+      - name: Upload orders_sent.json
+        uses: actions/upload-artifact@v3
         with:
+          name: orders-sent
           path: orders_sent.json
-          key: orders-sent-cache
