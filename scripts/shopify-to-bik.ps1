@@ -1,6 +1,6 @@
 # ===============================
 # Shopify Fulfilled Orders → BIK
-# One-time send per AWB
+# One-time send per AWB (lifetime unique)
 # Single AWB → tracking_url
 # Multiple AWBs → trac
 # ===============================
@@ -14,13 +14,12 @@ $trackingBaseUrl = "https://www.babyjalebiglobal.com/pages/my-tracking-page0?awb
 # 📂 Memory file (dictionary: { orderId: [awb1, awb2] })
 $memoryFile = "orders_sent.json"
 if (Test-Path $memoryFile) {
-    $content = Get-Content $memoryFile | ConvertFrom-Json
-    if ($content -is [System.Collections.Hashtable] -or $content.PSObject.Properties.Count -gt 0) {
-        $sentOrders = $content
-    } else {
-        # Legacy array → upgrade to dictionary
+    try {
+        $sentOrders = Get-Content $memoryFile | ConvertFrom-Json -AsHashtable
+    }
+    catch {
+        Write-Host "⚠️ Failed to parse orders_sent.json → resetting memory file"
         $sentOrders = @{}
-        foreach ($oid in $content) { $sentOrders["$oid"] = @() }
     }
 } else {
     $sentOrders = @{}
@@ -59,6 +58,7 @@ foreach ($order in $response.orders) {
     # Customer details
     $customerEmail   = $order.email
     $customerPhone   = $order.shipping_address.phone
+    if ([string]::IsNullOrWhiteSpace($customerPhone)) { $customerPhone = "" }
     $customerName    = if ($order.shipping_address.name) { $order.shipping_address.name } else { "$($order.customer.first_name) $($order.customer.last_name)" }
     $shippingAddress = "$($order.shipping_address.address1), $($order.shipping_address.city), $($order.shipping_address.province), $($order.shipping_address.country)"
 
@@ -99,7 +99,7 @@ Thank you for shopping with Baby Jalebi 💕
             Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $payload
             Write-Host "📤 Sent Order $orderId / AWB $awb"
 
-            # Save memory
+            # Save memory (lifetime unique)
             $sentOrders[$orderId] += $awb
             $sentOrders | ConvertTo-Json -Depth 5 | Set-Content $memoryFile
         }
@@ -112,6 +112,7 @@ Thank you for shopping with Baby Jalebi 💕
     # Multiple AWBs
     # ==========================
     else {
+        # Only include new AWBs never sent before
         $newAwbs = @()
         foreach ($awb in $allAwbs) {
             if (-not ($sentOrders[$orderId] -contains $awb)) {
@@ -152,9 +153,9 @@ We’ll keep you updated until everything reaches you safely 💕
 
         try {
             Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $payload
-            Write-Host "📤 Sent Order $orderId with multiple AWBs: $($newAwbs -join ', ')"
+            Write-Host "📤 Sent Order $orderId with new AWBs: $($newAwbs -join ', ')"
 
-            # Save memory
+            # Save memory (lifetime unique)
             $sentOrders[$orderId] += $newAwbs
             $sentOrders | ConvertTo-Json -Depth 5 | Set-Content $memoryFile
         }
