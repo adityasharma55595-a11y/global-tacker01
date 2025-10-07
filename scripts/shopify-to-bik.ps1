@@ -58,6 +58,13 @@ foreach ($order in $response.orders) {
     # Build tracking URLs directly
     $trackingUrls = $allAwbs | ForEach-Object { "$trackingBaseUrl$_" }
 
+    # Customer details
+    $customerEmail   = $order.email
+    $customerPhone   = $order.shipping_address.phone
+    if ([string]::IsNullOrWhiteSpace($customerPhone)) { $customerPhone = "" }
+    $customerName    = if ($order.shipping_address.name) { $order.shipping_address.name } else { "$($order.customer.first_name) $($order.customer.last_name)" }
+    $shippingAddress = "$($order.shipping_address.address1), $($order.shipping_address.city), $($order.shipping_address.province), $($order.shipping_address.country)"
+
     # ==========================
     # Single AWB
     # ==========================
@@ -72,9 +79,13 @@ foreach ($order in $response.orders) {
         $tracking_url = $trackingUrls[0]
 
         $payload = @{
-            order_id     = $orderId
-            awb          = $awb
-            tracking_url = $tracking_url
+            order_id         = $orderId
+            awb              = $awb
+            tracking_url     = $tracking_url
+            email            = $customerEmail
+            phone            = $customerPhone
+            customer_name    = $customerName
+            shipping_address = $shippingAddress
         } | ConvertTo-Json -Depth 5 -Compress
 
         try {
@@ -108,9 +119,13 @@ foreach ($order in $response.orders) {
         }
 
         $payload = @{
-            order_id = $orderId
-            awbs     = $allAwbs
-            trac     = @($trackingUrls)   # force JSON array for BIK
+            order_id         = $orderId
+            awbs             = $allAwbs
+            trac             = @($trackingUrls)   # force JSON array for BIK
+            email            = $customerEmail
+            phone            = $customerPhone
+            customer_name    = $customerName
+            shipping_address = $shippingAddress
         } | ConvertTo-Json -Depth 5 -Compress
 
         try {
