@@ -46,23 +46,17 @@ foreach ($order in $response.orders) {
     $allAwbs = @()
     foreach ($fulfillment in $order.fulfillments) {
         foreach ($awb in $fulfillment.tracking_numbers) {
-            if ($awb) { $allAwbs += $awb.Trim() }
+            if (-not [string]::IsNullOrWhiteSpace($awb)) {
+                $cleanAwb = $awb.Trim()
+                $allAwbs += $cleanAwb
+            }
         }
     }
 
     if ($allAwbs.Count -eq 0) { continue }
 
-    # Build tracking URLs safely
-    $trackingUrls = $allAwbs | ForEach-Object { 
-        "$trackingBaseUrl$( [Uri]::EscapeDataString($_) )" 
-    }
-
-    # Customer details
-    $customerEmail   = $order.email
-    $customerPhone   = $order.shipping_address.phone
-    if ([string]::IsNullOrWhiteSpace($customerPhone)) { $customerPhone = "" }
-    $customerName    = if ($order.shipping_address.name) { $order.shipping_address.name } else { "$($order.customer.first_name) $($order.customer.last_name)" }
-    $shippingAddress = "$($order.shipping_address.address1), $($order.shipping_address.city), $($order.shipping_address.province), $($order.shipping_address.country)"
+    # Build tracking URLs directly
+    $trackingUrls = $allAwbs | ForEach-Object { "$trackingBaseUrl$_" }
 
     # ==========================
     # Single AWB
@@ -77,30 +71,10 @@ foreach ($order in $response.orders) {
 
         $tracking_url = $trackingUrls[0]
 
-        if (-not $tracking_url -or $tracking_url -eq "h") {
-            Write-Host "❌ Invalid tracking URL for Order $orderId / AWB $awb"
-            continue
-        }
-
-        $templateMessage = @"
-📦✨ Good news, $customerName!  
-Your parcel has been dispatched and will be reaching you very soon 🚚💨  
-
-Track your order instantly with the link below 👇  
-🔗 $tracking_url  
-
-Thank you for shopping with Baby Jalebi 💕
-"@
-
         $payload = @{
-            order_id         = $orderId
-            awb              = $awb
-            tracking_url     = $tracking_url
-            email            = $customerEmail
-            phone            = $customerPhone
-            customer_name    = $customerName
-            shipping_address = $shippingAddress
-            template_message = $templateMessage
+            order_id     = $orderId
+            awb          = $awb
+            tracking_url = $tracking_url
         } | ConvertTo-Json -Depth 5 -Compress
 
         try {
@@ -133,29 +107,10 @@ Thank you for shopping with Baby Jalebi 💕
             continue
         }
 
-        $linksBlock = ($trackingUrls | ForEach-Object { "🔗 $_" }) -join "`n"
-
-        $templateMessage = @"
-📦✨ Hi $customerName, exciting update!  
-Since you ordered multiple products, we’ve assigned multiple tracking numbers for your shipments 🛍️🚚  
-
-You can track each item using the links below 👇  
-
-$linksBlock
-
-We’ll keep you updated until everything reaches you safely 💕  
-– Team Baby Jalebi 🌸
-"@
-
         $payload = @{
-            order_id         = $orderId
-            awbs             = $allAwbs
-            trac             = @($trackingUrls)   # force JSON array
-            email            = $customerEmail
-            phone            = $customerPhone
-            customer_name    = $customerName
-            shipping_address = $shippingAddress
-            template_message = $templateMessage
+            order_id = $orderId
+            awbs     = $allAwbs
+            trac     = @($trackingUrls)   # force JSON array for BIK
         } | ConvertTo-Json -Depth 5 -Compress
 
         try {
