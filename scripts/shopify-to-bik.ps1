@@ -46,14 +46,16 @@ foreach ($order in $response.orders) {
     $allAwbs = @()
     foreach ($fulfillment in $order.fulfillments) {
         foreach ($awb in $fulfillment.tracking_numbers) {
-            if ($awb) { $allAwbs += $awb }
+            if ($awb) { $allAwbs += $awb.Trim() }
         }
     }
 
     if ($allAwbs.Count -eq 0) { continue }
 
-    # Build tracking URLs
-    $trackingUrls = $allAwbs | ForEach-Object { "$trackingBaseUrl$_" }
+    # Build tracking URLs safely
+    $trackingUrls = $allAwbs | ForEach-Object { 
+        "$trackingBaseUrl$( [Uri]::EscapeDataString($_) )" 
+    }
 
     # Customer details
     $customerEmail   = $order.email
@@ -74,6 +76,12 @@ foreach ($order in $response.orders) {
         }
 
         $tracking_url = $trackingUrls[0]
+
+        if (-not $tracking_url -or $tracking_url -eq "h") {
+            Write-Host "❌ Invalid tracking URL for Order $orderId / AWB $awb"
+            continue
+        }
+
         $templateMessage = @"
 📦✨ Good news, $customerName!  
 Your parcel has been dispatched and will be reaching you very soon 🚚💨  
@@ -93,7 +101,7 @@ Thank you for shopping with Baby Jalebi 💕
             customer_name    = $customerName
             shipping_address = $shippingAddress
             template_message = $templateMessage
-        } | ConvertTo-Json -Depth 3
+        } | ConvertTo-Json -Depth 5 -Compress
 
         try {
             Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $payload
@@ -125,8 +133,7 @@ Thank you for shopping with Baby Jalebi 💕
             continue
         }
 
-        $trac = $trackingUrls
-        $linksBlock = ($trac | ForEach-Object { "🔗 $_" }) -join "`n"
+        $linksBlock = ($trackingUrls | ForEach-Object { "🔗 $_" }) -join "`n"
 
         $templateMessage = @"
 📦✨ Hi $customerName, exciting update!  
@@ -143,13 +150,13 @@ We’ll keep you updated until everything reaches you safely 💕
         $payload = @{
             order_id         = $orderId
             awbs             = $allAwbs
-            trac             = $trac
+            trac             = @($trackingUrls)   # force JSON array
             email            = $customerEmail
             phone            = $customerPhone
             customer_name    = $customerName
             shipping_address = $shippingAddress
             template_message = $templateMessage
-        } | ConvertTo-Json -Depth 3
+        } | ConvertTo-Json -Depth 5 -Compress
 
         try {
             Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $payload
