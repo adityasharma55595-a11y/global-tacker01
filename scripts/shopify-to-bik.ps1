@@ -31,6 +31,25 @@ $headers = @{
   "X-Shopify-Access-Token" = $shopifyToken
 }
 
+# ====================================
+# 📞 Helper: Normalize Phone Number
+# ====================================
+function Normalize-Phone($phone, $defaultCountryCode="+91") {
+    if ([string]::IsNullOrWhiteSpace($phone)) { return "" }
+
+    # Remove spaces, dashes, parentheses, anything except digits and +
+    $clean = ($phone -replace '[^0-9+]', '')
+
+    # Already in correct format
+    if ($clean.StartsWith("+")) { return $clean }
+
+    # If starts with 0, drop leading zeros
+    $clean = $clean.TrimStart("0")
+
+    # Prepend default country code
+    return "$defaultCountryCode$clean"
+}
+
 # 🗓️ Fetch only last 30 days shipped orders
 $thirtyDaysAgo = (Get-Date).AddDays(-30).ToString("o")
 $ordersUrl = "https://$shopifyDomain/admin/api/2023-10/orders.json?status=any&fulfillment_status=shipped&created_at_min=$thirtyDaysAgo"
@@ -49,7 +68,6 @@ foreach ($order in $response.orders) {
     foreach ($fulfillment in $order.fulfillments) {
         foreach ($awb in $fulfillment.tracking_numbers) {
             if (-not [string]::IsNullOrWhiteSpace($awb)) {
-                # Clean AWB → trim + remove hidden spaces/newlines
                 $cleanAwb = ($awb.Trim() -replace '\s+', '')
                 if ($cleanAwb.Length -gt 3) {
                     $allAwbs += $cleanAwb
@@ -81,8 +99,8 @@ foreach ($order in $response.orders) {
     # Customer details
     # ==========================
     $customerEmail   = $order.email
-    $customerPhone   = $order.shipping_address.phone
-    if ([string]::IsNullOrWhiteSpace($customerPhone)) { $customerPhone = "" }
+    $customerPhoneRaw = $order.shipping_address.phone
+    $customerPhone    = Normalize-Phone $customerPhoneRaw "+971"   # 👈 Change default code as needed
     $customerName    = if ($order.shipping_address.name) { $order.shipping_address.name } else { "$($order.customer.first_name) $($order.customer.last_name)" }
     $shippingAddress = "$($order.shipping_address.address1), $($order.shipping_address.city), $($order.shipping_address.province), $($order.shipping_address.country)"
 
@@ -126,7 +144,6 @@ foreach ($order in $response.orders) {
     # Multiple AWBs
     # ==========================
     else {
-        # Only include new AWBs never sent before
         $newAwbs = @()
         foreach ($awb in $allAwbs) {
             if (-not ($sentOrders[$orderId] -contains $awb)) {
@@ -142,7 +159,7 @@ foreach ($order in $response.orders) {
         $payload = @{
             order_id         = $orderId
             awbs             = $allAwbs
-            trac             = @($trackingUrls)   # force JSON array for BIK
+            trac             = @($trackingUrls)
             email            = $customerEmail
             phone            = $customerPhone
             customer_name    = $customerName
