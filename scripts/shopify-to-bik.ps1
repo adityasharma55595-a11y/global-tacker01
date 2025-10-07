@@ -42,23 +42,44 @@ foreach ($order in $response.orders) {
         $sentOrders[$orderId] = @()
     }
 
-    # Collect AWBs
+    # ==========================
+    # Collect and clean AWBs
+    # ==========================
     $allAwbs = @()
     foreach ($fulfillment in $order.fulfillments) {
         foreach ($awb in $fulfillment.tracking_numbers) {
             if (-not [string]::IsNullOrWhiteSpace($awb)) {
-                $cleanAwb = $awb.Trim()
-                $allAwbs += $cleanAwb
+                # Clean AWB → trim + remove hidden spaces/newlines
+                $cleanAwb = ($awb.Trim() -replace '\s+', '')
+                if ($cleanAwb.Length -gt 3) {
+                    $allAwbs += $cleanAwb
+                }
             }
         }
     }
 
-    if ($allAwbs.Count -eq 0) { continue }
+    if ($allAwbs.Count -eq 0) { 
+        Write-Host "❌ Order $orderId marked shipped but no valid AWBs → skipping"
+        continue 
+    }
 
-    # Build tracking URLs directly
+    # ==========================
+    # Build tracking URLs safely
+    # ==========================
     $trackingUrls = $allAwbs | ForEach-Object { "$trackingBaseUrl$_" }
 
+    # Log each URL before sending
+    foreach ($url in $trackingUrls) {
+        if ($url -notmatch '^https:\/\/www\.babyjalebiglobal\.com\/pages\/my-tracking-page0\?awb=.+$') {
+            Write-Host "❌ Invalid tracking URL built: $url"
+        } else {
+            Write-Host "✅ Tracking URL built: $url"
+        }
+    }
+
+    # ==========================
     # Customer details
+    # ==========================
     $customerEmail   = $order.email
     $customerPhone   = $order.shipping_address.phone
     if ([string]::IsNullOrWhiteSpace($customerPhone)) { $customerPhone = "" }
@@ -90,7 +111,7 @@ foreach ($order in $response.orders) {
 
         try {
             Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $payload
-            Write-Host "📤 Sent Order $orderId / AWB $awb"
+            Write-Host "📤 Sent Order $orderId / AWB $awb → $tracking_url"
 
             # Save memory (lifetime unique)
             $sentOrders[$orderId] += $awb
@@ -130,7 +151,7 @@ foreach ($order in $response.orders) {
 
         try {
             Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $payload
-            Write-Host "📤 Sent Order $orderId with new AWBs: $($newAwbs -join ', ')"
+            Write-Host "📤 Sent Order $orderId with AWBs: $($newAwbs -join ', ')"
 
             # Save memory (lifetime unique)
             $sentOrders[$orderId] += $newAwbs
