@@ -43,14 +43,18 @@ function Normalize-Phone($phone, $defaultCountryCode="+971") {
     return "$defaultCountryCode$clean"
 }
 
-# 🗓️ Fetch last 30 days shipped orders
-$thirtyDaysAgo = (Get-Date).AddDays(-30).ToString("o")
-$ordersUrl = "https://$shopifyDomain/admin/api/2023-10/orders.json?status=any&fulfillment_status=shipped&created_at_min=$thirtyDaysAgo"
+# 🗓️ Fetch only last 5 days shipped orders
+$fiveDaysAgo = (Get-Date).AddDays(-5).ToString("o")
+$ordersUrl = "https://$shopifyDomain/admin/api/2023-10/orders.json?status=any&fulfillment_status=shipped&created_at_min=$fiveDaysAgo"
 $response  = Invoke-RestMethod -Uri $ordersUrl -Headers $headers -Method Get
+
+Write-Host "📦 Found $($response.orders.Count) shipped orders from last 5 days"
 
 foreach ($order in $response.orders) {
 
-    # Collect all AWBs
+    # ==========================
+    # Collect & clean AWBs
+    # ==========================
     $allAwbs = @()
     foreach ($fulfillment in $order.fulfillments) {
         foreach ($awb in $fulfillment.tracking_numbers) {
@@ -63,12 +67,15 @@ foreach ($order in $response.orders) {
         }
     }
 
+    # Skip if no tracking numbers
     if ($allAwbs.Count -eq 0) { 
-        Write-Host "❌ Order $($order.id) has no valid AWBs → skipping"
+        Write-Host "❌ Order $($order.id) has no valid tracking number → skipping"
         continue 
     }
 
-    # Filter new AWBs (never sent before)
+    # ==========================
+    # Filter out AWBs already sent
+    # ==========================
     $newAwbs = $allAwbs | Where-Object { -not $sentAwbs.ContainsKey($_) }
 
     if ($newAwbs.Count -eq 0) {
@@ -76,16 +83,22 @@ foreach ($order in $response.orders) {
         continue
     }
 
-    # Build URLs
+    # ==========================
+    # Build tracking URLs
+    # ==========================
     $trackingUrls = $newAwbs | ForEach-Object { "$trackingBaseUrl$_" }
 
+    # ==========================
     # Customer details
+    # ==========================
     $customerEmail   = $order.email
     $customerPhone   = Normalize-Phone $order.shipping_address.phone "+971"
     $customerName    = $order.shipping_address.name
     $shippingAddress = "$($order.shipping_address.address1), $($order.shipping_address.city), $($order.shipping_address.country)"
 
-    # Single AWB payload
+    # ==========================
+    # Build Payload
+    # ==========================
     if ($newAwbs.Count -eq 1) {
         $awb = $newAwbs[0]
         $payload = @{
@@ -97,9 +110,7 @@ foreach ($order in $response.orders) {
             customer_name    = $customerName
             shipping_address = $shippingAddress
         }
-    }
-    else {
-        # Multi AWB payload
+    } else {
         $payload = @{
             order_id         = "$($order.id)"
             awbs             = @($newAwbs)
@@ -111,15 +122,20 @@ foreach ($order in $response.orders) {
         }
     }
 
-    # Convert safely to JSON + UTF-8 encode
+    # ==========================
+    # Convert JSON safely + UTF8 encode
+    # ==========================
     $jsonBody = ($payload | ConvertTo-Json -Depth 5 -Compress)
     $utf8Body = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
 
+    # ==========================
+    # Send to BIK Webhook
+    # ==========================
     try {
         Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $utf8Body
         Write-Host "📤 Sent Order $($order.id) → AWBs: $($newAwbs -join ', ')"
 
-        # Save memory once per new AWB
+        # Save AWBs to memory file (lifetime unique)
         foreach ($awb in $newAwbs) { $sentAwbs[$awb] = $true }
         $sentAwbs | ConvertTo-Json -Depth 5 | Set-Content $memoryFile
     }
