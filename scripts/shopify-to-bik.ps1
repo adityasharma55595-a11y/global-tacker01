@@ -2,7 +2,7 @@
 # Shopify Fulfilled Orders → BIK
 # One-time send per AWB (lifetime unique)
 # Single AWB → tracking_url
-# Multiple AWBs → trac
+# Multiple AWBs → trac (newline separated)
 # ===============================
 
 # 🔑 Constants
@@ -67,7 +67,6 @@ foreach ($order in $response.orders) {
         }
     }
 
-    # Skip if no tracking numbers
     if ($allAwbs.Count -eq 0) { 
         Write-Host "❌ Order $($order.id) has no valid tracking number → skipping"
         continue 
@@ -77,7 +76,6 @@ foreach ($order in $response.orders) {
     # Filter out AWBs already sent
     # ==========================
     $newAwbs = $allAwbs | Where-Object { -not $sentAwbs.ContainsKey($_) }
-
     if ($newAwbs.Count -eq 0) {
         Write-Host "⚠️ All AWBs for Order $($order.id) already sent → skipping"
         continue
@@ -111,10 +109,12 @@ foreach ($order in $response.orders) {
             shipping_address = $shippingAddress
         }
     } else {
+        # Join multiple URLs using newline (no commas or brackets)
+        $joinedUrls = ($trackingUrls -join "`n")
         $payload = @{
             order_id         = "$($order.id)"
             awbs             = @($newAwbs)
-            trac             = @($trackingUrls)
+            trac             = $joinedUrls
             email            = $customerEmail
             phone            = $customerPhone
             customer_name    = $customerName
@@ -123,19 +123,14 @@ foreach ($order in $response.orders) {
     }
 
     # ==========================
-    # Convert JSON safely + UTF8 encode
-    # ==========================
-    $jsonBody = ($payload | ConvertTo-Json -Depth 5 -Compress)
-    $utf8Body = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
-
-    # ==========================
     # Send to BIK Webhook
     # ==========================
     try {
+        $jsonBody = ($payload | ConvertTo-Json -Depth 5 -Compress)
+        $utf8Body = [System.Text.Encoding]::UTF8.GetBytes($jsonBody)
         Invoke-RestMethod -Uri $bikWebhookUrl -Method Post -Headers @{ "Content-Type"="application/json" } -Body $utf8Body
-        Write-Host "📤 Sent Order $($order.id) → AWBs: $($newAwbs -join ', ')"
 
-        # Save AWBs to memory file (lifetime unique)
+        Write-Host "📤 Sent Order $($order.id) → AWBs: $($newAwbs -join ', ')"
         foreach ($awb in $newAwbs) { $sentAwbs[$awb] = $true }
         $sentAwbs | ConvertTo-Json -Depth 5 | Set-Content $memoryFile
     }
