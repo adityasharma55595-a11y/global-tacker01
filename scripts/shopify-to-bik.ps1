@@ -10,7 +10,7 @@
 $shopifyDomain   = $env:SHOPIFY_DOMAIN
 $shopifyToken    = $env:SHOPIFY_TOKEN
 $bikWebhookUrl   = $env:BIK_WEBHOOK_URL
-$trackingBaseUrl = "https://www.babyjalebiglobal.com/pages/my-tracking-page0?awb="
+$trackingBaseUrl = "https://parcelsapp.com/en/tracking/"   # ← (changed from babyjalebiglobal tracking page)
 
 # 📂 Memory file (dictionary: { awb1: true, awb2: true })
 $memoryFile = "orders_sent.json"
