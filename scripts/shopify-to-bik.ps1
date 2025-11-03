@@ -67,7 +67,7 @@ foreach ($order in $response.orders) {
             }
         }
 
-        # Collect valid tracking numbers
+        # Collect valid tracking numbers from array
         foreach ($awb in $fulfillment.tracking_numbers) {
             if (-not [string]::IsNullOrWhiteSpace($awb)) {
                 $cleanAwb = ($awb.Trim() -replace '\s+', '')
@@ -75,6 +75,12 @@ foreach ($order in $response.orders) {
                     $allAwbs += $cleanAwb
                 }
             }
+        }
+
+        # ✅ Fallback: some fulfillments only populate 'tracking_number' (singular)
+        if ((($fulfillment.tracking_numbers | Measure-Object).Count -eq 0) -and $fulfillment.tracking_number) {
+            $one = ($fulfillment.tracking_number.ToString().Trim() -replace '\s+', '')
+            if ($one.Length -gt 3) { $allAwbs += $one }
         }
     }
 
@@ -95,8 +101,8 @@ foreach ($order in $response.orders) {
         continue
     }
 
-    # Build tracking URLs
-    $trackingUrls = $newAwbs | ForEach-Object { "$trackingBaseUrl$_" }
+    # ✅ Build tracking URLs (braced interpolation fixes the 'E' issue)
+    $trackingUrls = $newAwbs | ForEach-Object { "${trackingBaseUrl}$($_)" }
 
     # Customer details
     $customerEmail   = $order.email
@@ -110,7 +116,7 @@ foreach ($order in $response.orders) {
         $payload = @{
             order_id         = "$($order.id)"
             awb              = $awb
-            tracking_url     = "$trackingBaseUrl$awb"
+            tracking_url     = "${trackingBaseUrl}${awb}"  # ← braced
             email            = $customerEmail
             phone            = $customerPhone
             customer_name    = $customerName
